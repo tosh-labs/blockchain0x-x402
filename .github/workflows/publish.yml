@@ -75,3 +75,27 @@ jobs:
           rm -f "$HOME/.npmrc"
           npm --version
           npm publish --provenance --access public --tag "$DIST_TAG"
+
+      - name: advance `latest` dist-tag to the just-published version
+        # The `latest` dist-tag is what `npm install <pkg>` resolves to
+        # when the caller does not pin a tag. By default `npm publish
+        # --tag <X>` only sets dist-tag X, leaving `latest` frozen at
+        # whatever it was. While we're in the pre-1.0 alpha era we want
+        # `latest` to always move forward to the newest release so a
+        # bare `npm install` does not silently install a stale build.
+        #
+        # Skipped when the publish above already set `latest` (i.e.
+        # the dispatch input was `tag: latest`). The npm registry calls
+        # below are idempotent, but the `if` keeps the workflow log
+        # honest about what happened.
+        #
+        # Policy revisit at 1.0: once a stable line exists, `latest`
+        # should pin to the newest stable, not alphas. Remove this step
+        # then (or gate it on `inputs.tag == 'latest'` only).
+        if: inputs.tag != 'latest'
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VER=$(node -p "require('./package.json').version")
+          echo "Advancing ${PKG_NAME} latest -> ${PKG_VER}"
+          npm dist-tag add "${PKG_NAME}@${PKG_VER}" latest
+          npm view "${PKG_NAME}" dist-tags
