@@ -27,6 +27,13 @@
  * Single retry only - if the second hop also returns 402 the wrapper
  * propagates that response unchanged so the caller can decide whether to
  * loop or surface to the user.
+ *
+ * Spend policy (sub-plan 27.1 A6): the 402 challenge is ATTACKER-CONTROLLED
+ * input. Callers MUST set `maxAmountWei` (and should set `allowedPayTo`)
+ * so a malicious or compromised seller cannot drain the session allowance
+ * by quoting an arbitrary amount/recipient. The wrapper also enforces the
+ * requirement's `maxAgeSeconds` and refuses 402s that match no known
+ * network instead of guessing.
  */
 
 import { buildPaymentHeader, parse402Response, X402WireError } from './wire.js';
@@ -69,6 +76,23 @@ export interface CreateX402ClientOptions {
    */
   agentId?: string;
   /**
+   * Spend ceiling in 6-dp USDC base units (sub-plan 27.1 A6). A 402
+   * requirement quoting MORE than this is refused with
+   * `X402ClientError('amount_over_cap')` BEFORE any payment is created.
+   *
+   * SET THIS. The 402 challenge is attacker-controlled input: without a
+   * ceiling the client pays whatever amount the (possibly compromised)
+   * seller quotes, bounded only by the on-chain allowance.
+   */
+  maxAmountWei?: string;
+  /**
+   * Optional recipient allowlist (sub-plan 27.1 A6). When set, a 402
+   * quoting a `payToAddress` outside this list is refused with
+   * `X402ClientError('recipient_not_allowed')` before any payment.
+   * Compared case-insensitively.
+   */
+  allowedPayTo?: string[];
+  /**
    * Override the underlying fetch implementation. Defaults to
    * `globalThis.fetch`. Mostly a testing seam.
    */
@@ -79,10 +103,19 @@ export interface CreateX402ClientOptions {
   confirmPollMs?: number;
   /** Sleeper override - testing seam. */
   sleep?: (ms: number) => Promise<void>;
+  /** Clock override - testing seam for the maxAgeSeconds enforcement. */
+  now?: () => number;
 }
 
 export class X402ClientError extends Error {
-  readonly code: 'no_matching_requirement' | 'settlement_timeout' | 'chain_failed' | 'second_402';
+  readonly code:
+    | 'no_matching_requirement'
+    | 'settlement_timeout'
+    | 'chain_failed'
+    | 'second_402'
+    | 'amount_over_cap'
+    | 'recipient_not_allowed'
+    | 'stale_challenge';
   constructor(code: X402ClientError['code'], message: string) {
     super(message);
     this.name = 'X402ClientError';
@@ -108,16 +141,13 @@ function pickRequirement(
   accepts: readonly PaymentRequirement[],
   preferredNetwork: 'mainnet' | 'testnet' | null
 ): PaymentRequirement | null {
-  if (preferredNetwork) {
-    const match = accepts.find((r) => r.network === preferredNetwork);
-    if (match) {
-      return match;
-    }
+  // 27.1 A6: an unknown network is a refusal, not a guess. The old
+  // `accepts[0]` fallback let a malicious 402 steer an SDK with an
+  // unrecognised key prefix onto whichever requirement it listed first.
+  if (!preferredNetwork) {
+    return null;
   }
-  // Fall back to the first listed requirement if the SDK doesn't know
-  // its network (no apiKey prefix). The server will reject a wrong-net
-  // settlement; this still gives the caller a deterministic choice.
-  return accepts[0] ?? null;
+  return accepts.find((r) => r.network === preferredNetwork) ?? null;
 }
 
 function usdcDecimalFromWei(amountWei: string): string {
@@ -133,6 +163,8 @@ export function createX402Client(options: CreateX402ClientOptions): typeof globa
   const sleep = options.sleep ?? defaultSleep;
   const confirmTimeoutSec = options.confirmTimeoutSeconds ?? 30;
   const confirmPollMs = options.confirmPollMs ?? 1000;
+  const now = options.now ?? Date.now;
+  const allowedPayTo = options.allowedPayTo?.map((a) => a.toLowerCase());
 
   const wrappedFetch: typeof globalThis.fetch = async (input, init) => {
     const first = await fetchImpl(input, init);
@@ -142,12 +174,30 @@ export function createX402Client(options: CreateX402ClientOptions): typeof globa
     // Clone so a downstream consumer of the original response (rare,
     // but legitimate) can still read its body.
     const x402 = await parse402Response(first.clone());
+    const challengeAtMs = now();
     const network = sdk.options.network ?? networkFromApiKey(sdk.options.apiKey);
     const requirement = pickRequirement(x402.accepts, network);
     if (!requirement) {
       throw new X402ClientError(
         'no_matching_requirement',
         `402 response has no requirement matching network ${network ?? 'unknown'}.`
+      );
+    }
+    // 27.1 A6: the 402 is attacker-controlled input - enforce the
+    // caller's spend policy BEFORE any payment is created.
+    if (
+      options.maxAmountWei !== undefined &&
+      BigInt(requirement.amountWeiUsdc) > BigInt(options.maxAmountWei)
+    ) {
+      throw new X402ClientError(
+        'amount_over_cap',
+        `402 quotes ${requirement.amountWeiUsdc} wei USDC, above the configured maxAmountWei ${options.maxAmountWei}.`
+      );
+    }
+    if (allowedPayTo && !allowedPayTo.includes(requirement.payToAddress.toLowerCase())) {
+      throw new X402ClientError(
+        'recipient_not_allowed',
+        `402 pay-to address ${requirement.payToAddress} is not in the configured allowedPayTo list.`
       );
     }
     if (!options.agentId) {
@@ -185,6 +235,18 @@ export function createX402Client(options: CreateX402ClientOptions): typeof globa
         'settlement_timeout',
         `Payment ${payment.id} did not confirm within ${confirmTimeoutSec}s.`
       );
+    }
+    // 27.1 A6: enforce the requirement's maxAgeSeconds. A proof presented
+    // after the challenge's validity window is refused client-side instead
+    // of being sent for the seller to (maybe) reject.
+    if (typeof requirement.maxAgeSeconds === 'number') {
+      const elapsedSec = (now() - challengeAtMs) / 1000;
+      if (elapsedSec > requirement.maxAgeSeconds) {
+        throw new X402ClientError(
+          'stale_challenge',
+          `Challenge expired: confirmation took ${Math.round(elapsedSec)}s, maxAgeSeconds is ${requirement.maxAgeSeconds}.`
+        );
+      }
     }
 
     const payerAddress = confirmed.fromAddress ?? '';

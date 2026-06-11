@@ -24,7 +24,13 @@ import { createClient } from '@blockchain0x/node';
 import { createX402Client } from '@blockchain0x/x402/client';
 
 const sdk = createClient({ apiKey: process.env.B0X_API_KEY! }); // sk_test_... or sk_live_...
-const fetch = createX402Client({ sdk });
+const fetch = createX402Client({
+  sdk,
+  // ALWAYS set a spend ceiling (6-dp USDC base units). The 402 quote is
+  // attacker-controlled input; without a cap the wrapper would pay
+  // whatever the seller quotes, bounded only by the on-chain allowance.
+  maxAmountWei: '500000', // 0.50 USDC
+});
 
 const res = await fetch('https://service-b.com/llm-query', {
   method: 'POST',
@@ -39,12 +45,26 @@ const result = await res.json();
 What the wrapper does on a 402:
 
 1. Parse the response with `parse402Response`.
-2. Pick the requirement whose `network` matches the SDK's bound key mode (sk*test*_ -> testnet, sk*live*_ -> mainnet).
-3. Call `sdk.payments.create({ agentId, to, amountWei })`. The SDK auto-attaches an `Idempotency-Key` so a flaky retry never double-spends.
-4. Poll `sdk.transactions.get(payment.id)` every 1 s up to 30 s until `status === 'confirmed'` + `txHash` is non-null. Timeout - `X402ClientError('settlement_timeout')`.
-5. Build the `X-Payment` header with `buildPaymentHeader` and re-issue the original request.
+2. Pick the requirement whose `network` matches the SDK's bound key mode (sk*test*_ -> testnet, sk*live*_ -> mainnet). An unknown key mode is a refusal (`no_matching_requirement`), never a guess.
+3. Enforce the spend policy BEFORE paying: a quote above `maxAmountWei` throws `X402ClientError('amount_over_cap')`; a pay-to address outside `allowedPayTo` (when set) throws `X402ClientError('recipient_not_allowed')`.
+4. Call `sdk.payments.create({ agentId, to, amountWei })`. The SDK auto-attaches an `Idempotency-Key` so a flaky retry never double-spends.
+5. Poll `sdk.transactions.get(payment.id)` every 1 s up to 30 s until `status === 'confirmed'` + `txHash` is non-null. Timeout - `X402ClientError('settlement_timeout')`.
+6. Enforce the requirement's `maxAgeSeconds`: a confirmation that lands after the challenge's validity window throws `X402ClientError('stale_challenge')`.
+7. Build the `X-Payment` header with `buildPaymentHeader` and re-issue the original request.
 
 If the second hop also returns 402 the wrapper throws `X402ClientError('second_402')` - the server's verification rejected the proof and looping won't help.
+
+### Spend policy (set this)
+
+The 402 challenge comes from the seller - treat it as untrusted input. `maxAmountWei` is your per-call ceiling; `allowedPayTo` pins the recipients you intend to pay. The on-chain SpendPermission allowance is the LAST line of defense, not the first.
+
+```ts
+const fetch = createX402Client({
+  sdk,
+  maxAmountWei: '500000', // refuse any quote above 0.50 USDC
+  allowedPayTo: ['0xSellerAddress...'], // optional recipient pinning
+});
+```
 
 ### Tuning knobs
 

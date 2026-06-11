@@ -1,5 +1,23 @@
 # @blockchain0x/x402 changelog
 
+## [0.1.0-alpha.4] - 2026-06-11
+
+Buyer-side spend guardrails (security sub-plan 27.1 row A6). The 402
+challenge is attacker-controlled input; the client now lets callers bound
+what it will pay:
+
+- `maxAmountWei` on `createX402Client` - a quote above the ceiling throws
+  `X402ClientError('amount_over_cap')` BEFORE any payment is created.
+  Callers SHOULD always set this.
+- `allowedPayTo` - optional recipient allowlist; a quote outside it throws
+  `X402ClientError('recipient_not_allowed')`.
+- The requirement's `maxAgeSeconds` is now enforced: a confirmation that
+  lands after the window throws `X402ClientError('stale_challenge')`.
+- Behavior change: when the SDK's network cannot be derived (unknown key
+  prefix, no explicit `network`), the client now throws
+  `X402ClientError('no_matching_requirement')` instead of silently paying
+  the first listed requirement (`accepts[0]`).
+
 ## [0.1.0-alpha.3] - 2026-05-29
 
 minor
