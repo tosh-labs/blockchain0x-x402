@@ -4,13 +4,13 @@
 # Requires npm Trusted Publisher binding on
 # https://www.npmjs.com/package/@blockchain0x/x402/access:
 #   Publisher type:    GitHub Actions
-#   Repository owner:  Tosh-Labs
+#   Repository owner:  tosh-labs
 #   Repository name:   blockchain0x-x402
 #   Workflow filename: publish.yml
 #   Environment:       (blank)
 #
 # This file is mirrored from the private monorepo
-# `Tosh-Labs/blockchain0x-app:packages/x402/.public-templates/.github/workflows/publish.yml`
+# `tosh-labs/blockchain0x-app:packages/x402/.public-templates/.github/workflows/publish.yml`
 # by the `mirror-x402` workflow there. Do not edit it directly in the
 # public repo - changes will be overwritten on the next mirror.
 

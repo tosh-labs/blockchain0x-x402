@@ -44,13 +44,13 @@
     "fastify",
     "express"
   ],
-  "homepage": "https://github.com/Tosh-Labs/blockchain0x-x402#readme",
+  "homepage": "https://github.com/tosh-labs/blockchain0x-x402#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Tosh-Labs/blockchain0x-x402.git"
+    "url": "git+https://github.com/tosh-labs/blockchain0x-x402.git"
   },
   "bugs": {
-    "url": "https://github.com/Tosh-Labs/blockchain0x-x402/issues"
+    "url": "https://github.com/tosh-labs/blockchain0x-x402/issues"
   },
   "license": "Apache-2.0",
   "publishConfig": {
