@@ -68,11 +68,23 @@ jobs:
         # package.json mutations, etc.).
         run: npm test
 
-      - name: publish (OIDC + provenance + selected tag)
+      - name: publish (token auth + provenance + selected tag)
+        # Auth via the granular automation token (NPM_TOKEN secret) rather than
+        # OIDC trusted-publisher auto-exchange: the trusted publisher IS
+        # configured on npmjs.org, but npm's automatic OIDC exchange stopped
+        # authenticating (`npm publish` returns ENEEDAUTH) despite an identical
+        # workflow publishing fine earlier - an external npm-side change.
+        # `--provenance` is unchanged: the Sigstore attestation comes from
+        # `id-token: write` and is independent of the publish auth method.
         env:
           DIST_TAG: ${{ inputs.tag }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          rm -f "$HOME/.npmrc"
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN secret is not set in this repo; cannot publish."
+            exit 1
+          fi
+          printf '//registry.npmjs.org/:_authToken=%s\n' "${NPM_TOKEN}" > "$HOME/.npmrc"
           npm --version
           npm publish --provenance --access public --tag "$DIST_TAG"
 

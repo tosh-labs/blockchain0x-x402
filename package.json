@@ -1,6 +1,6 @@
 {
   "name": "@blockchain0x/x402",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "x402 protocol client + server adapters for Blockchain0x. Drop-in fetch wrapper for pay-side, Fastify/Express plugins for receive-side. See https://blockchain0x.com/docs/x402.",
   "type": "module",
   "main": "./dist/index.js",

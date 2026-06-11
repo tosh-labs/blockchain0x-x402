@@ -1,5 +1,9 @@
 # @blockchain0x/x402 changelog
 
+## [0.1.0-alpha.5] - 2026-06-11
+
+Alpha iteration. Includes the 27.1 buyer-side x402 spend guardrails: maxAmountWei cap, allowedPayTo recipient allow-list, maxAgeSeconds challenge-staleness enforcement, and no_matching_requirement on unknown-network 402s.
+
 ## [0.1.0-alpha.4] - 2026-06-11
 
 Buyer-side spend guardrails (security sub-plan 27.1 row A6). The 402
@@ -43,6 +47,7 @@ Adds:
 
 Peer dependency: `@blockchain0x/node@^0.2.0`.
 
+[0.1.0-alpha.5]: https://github.com/tosh-labs/blockchain0x-x402/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.3]: https://github.com/tosh-labs/blockchain0x-x402/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/tosh-labs/blockchain0x-x402/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/tosh-labs/blockchain0x-x402/releases/tag/v0.1.0-alpha.1
